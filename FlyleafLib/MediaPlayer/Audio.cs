@@ -1,4 +1,4 @@
-﻿using Vortice.Multimedia;
+using Vortice.Multimedia;
 using Vortice.XAudio2;
 
 using static Vortice.XAudio2.XAudio2;
@@ -161,7 +161,7 @@ public class Audio : NotifyPropertyChanged
                             masteringVoice;
     internal IXAudio2SourceVoice
                             sourceVoice;
-    WaveFormat              waveFormat  = new(48000, 16, 2); // Output Audio Device
+    WaveFormat              waveFormat  = new(48000, 16, 6); // Output Audio Device
     AudioBuffer             audioBuffer = new();
     internal double         Timebase;
     internal ulong          submittedSamples;
@@ -204,7 +204,12 @@ public class Audio : NotifyPropertyChanged
             if (!isOpened || sampleRate <= 0)
                 return;
 
-            player.Log.Info($"Initialiazing audio at {sampleRate}Hz ({Device.Id}:{Device.Name})");
+            // FORCE synchronization right before creating the voice
+            int targetChannels = ChannelsOut;
+            if (targetChannels <= 0) targetChannels = 2;
+            waveFormat = new WaveFormat(sampleRate, 16, targetChannels);
+
+            player.Log.Info($"Initializing audio at {sampleRate}Hz ({targetChannels} Channels) ({Device.Id}:{Device.Name})");
 
             Dispose();
 
@@ -268,7 +273,8 @@ public class Audio : NotifyPropertyChanged
 
                 framesDisplayed++;
 
-                submittedSamples += (ulong) (aFrame.dataLen / 4); // ASampleBytes
+                // Replace the hardcoded / 4 with this:
+                submittedSamples += (ulong) (aFrame.dataLen / (2 * ChannelsOut));
                 SamplesAdded?.Invoke(this, aFrame);
 
                 audioBuffer.AudioDataPointer= aFrame.dataPtr;
@@ -362,7 +368,7 @@ public class Audio : NotifyPropertyChanged
                 return;
             }
 
-            if (sampleRate != curSampleRate)
+            if (sampleRate != curSampleRate || waveFormat.Channels != ChannelsOut)
                 Initialize();
         }
         
