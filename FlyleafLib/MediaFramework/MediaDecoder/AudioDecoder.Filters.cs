@@ -110,7 +110,7 @@ public unsafe partial class AudioDecoder
                 abufferSinkCtx = avfilter_graph_alloc_filter(filterGraph, ABUFFERSINK, null);
                 Set(abufferSinkCtx, "sample_formats",  [AOutSampleFormat],         AVOptionType.SampleFmt);
                 Set(abufferSinkCtx, "samplerates",     [AudioStream.SampleRate],   AVOptionType.Int);
-                Set(abufferSinkCtx, "channel_layouts", [AV_CHANNEL_LAYOUT_STEREO], AVOptionType.Chlayout);
+                Set(abufferSinkCtx, "channel_layouts", [AOutChannelLayout],        AVOptionType.Chlayout);
                 ret = avfilter_init_dict(abufferSinkCtx, null);
             }
             else
@@ -121,7 +121,8 @@ public unsafe partial class AudioDecoder
                     ret = av_opt_set_bin(abufferSinkCtx , "sample_fmts"         , (byte*)ptr,            sizeof(AVSampleFormat) , OptSearchFlags.Children);
                 ret = av_opt_set_bin(abufferSinkCtx     , "sample_rates"        , (byte*)&tmpSampleRate, sizeof(int)            , OptSearchFlags.Children);
                 ret = av_opt_set_int(abufferSinkCtx     , "all_channel_counts"  , 0                                             , OptSearchFlags.Children);
-                ret = av_opt_set(abufferSinkCtx         , "ch_layouts"          , "stereo"                                      , OptSearchFlags.Children);
+                string layoutStr = AOutChannels == 6 ? "5.1" : "stereo";
+                ret = av_opt_set(abufferSinkCtx, "ch_layouts", layoutStr,                                                         OptSearchFlags.Children);
             }
 
             _ = avfilter_link(linkCtx, 0, abufferSinkCtx, 0);

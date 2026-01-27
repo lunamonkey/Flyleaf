@@ -27,11 +27,11 @@ namespace FlyleafLib.MediaFramework.MediaDecoder;
 
 public unsafe partial class AudioDecoder : DecoderBase
 {
-    static readonly AVSampleFormat   AOutSampleFormat    = AVSampleFormat.S16;
-    static readonly string           AOutSampleFormatStr = av_get_sample_fmt_name(AOutSampleFormat);
-    static readonly AVChannelLayout  AOutChannelLayout   = AV_CHANNEL_LAYOUT_STEREO;
-    static readonly int              AOutChannels        = AOutChannelLayout.nb_channels;
-    static readonly int              ASampleBytes        = av_get_bytes_per_sample(AOutSampleFormat) * AOutChannels;
+    public AVSampleFormat   AOutSampleFormat    = AVSampleFormat.S16;
+    public string           AOutSampleFormatStr;
+    public AVChannelLayout  AOutChannelLayout;
+    public int              AOutChannels;
+    public int              ASampleBytes;
 
     public AudioStream      AudioStream         => (AudioStream) Stream;
     public readonly
@@ -80,6 +80,18 @@ public unsafe partial class AudioDecoder : DecoderBase
 
         codecCtx->pkt_timebase  = Stream.AVStream->time_base;
         codecCtx->codec_id      = codec->id; // avcodec_parameters_to_context will change this we need to set Stream's Codec Id (eg we change mp2 to mp3)
+
+        // Dynamic Output Configuration: Match the input stream's layout
+        AOutSampleFormat = AVSampleFormat.S16;
+        AOutSampleFormatStr = av_get_sample_fmt_name(AOutSampleFormat);
+
+        if (Config.Audio.Channels == 6)
+            AOutChannelLayout = AV_CHANNEL_LAYOUT_5POINT1;
+        else
+            AOutChannelLayout = codecCtx->ch_layout;
+
+        AOutChannels = AOutChannelLayout.nb_channels;
+        ASampleBytes = av_get_bytes_per_sample(AOutSampleFormat) * AOutChannels;
 
         var codecOpts = Config.Decoder.AudioCodecOpt;
         AVDictionary* avopt = null;

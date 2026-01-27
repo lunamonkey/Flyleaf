@@ -798,6 +798,12 @@ public class Config : NotifyPropertyChanged
         public void Toggle() => Enabled = !Enabled;
 
         /// <summary>
+        /// Force specific output channels (e.g. 6 for 5.1). Set to 0 to use input's channel count.
+        /// </summary>
+        public int Channels { get => _Channels; set => Set(ref _Channels, value); }
+        int _Channels = 0;
+
+        /// <summary>
         /// Audio delay ticks (will be reseted to 0 for every new audio stream)
         /// </summary>
         [JsonIgnore] // We reset this on open (TBR: Resync should be Task?* can block UI | Same for Enable) 

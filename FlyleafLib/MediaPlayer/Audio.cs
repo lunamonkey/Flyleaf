@@ -49,7 +49,7 @@ public class Audio : NotifyPropertyChanged
     /// <summary>
     /// Audio player's channels out (currently 2 channels supported only)
     /// </summary>
-    public int      ChannelsOut     { get; } = 2;
+    public int ChannelsOut => Config.Audio.Channels > 0 ? Config.Audio.Channels : (player.AudioDecoder != null ? player.AudioDecoder.AOutChannels : 2);
 
     public string   ChannelLayout   { get => channelLayout;     internal set => Set(ref _ChannelLayout, value); }
     internal string _ChannelLayout, channelLayout;
