@@ -1,4 +1,4 @@
-﻿using FlyleafLib.MediaFramework.MediaStream;
+﻿﻿﻿﻿using FlyleafLib.MediaFramework.MediaStream;
 using FlyleafLib.MediaFramework.MediaFrame;
 using FlyleafLib.MediaFramework.MediaRemuxer;
 
@@ -250,13 +250,18 @@ public unsafe partial class AudioDecoder : DecoderBase
                             if (demuxer.IsRunning) break;
                         }
 
+                        if (demuxer.IsRunning) continue;
+
                         lock (demuxer.lockStatus)
                         lock (lockStatus)
                         {
                             if (demuxer.Status == Status.Pausing || demuxer.Status == Status.Paused)
                                 Status = Status.Pausing;
                             else if (demuxer.Status != Status.Ended)
+                            {
+                                Log.Error($"[AudioDecoder] Demuxer stopped/failed. Demuxer Status: {demuxer.Status}. Stopping decoder.");
                                 Status = Status.Stopping;
+                            }
                             else
                                 continue;
                         }
@@ -302,8 +307,9 @@ public unsafe partial class AudioDecoder : DecoderBase
                 {
                     if (ret == AVERROR_EOF)
                     {
+                        Log.Debug($"[AudioDecoder] SendPacket EOF. Status: {Status} -> Ended");
                         Status = Status.Ended;
-                        break;
+                        { Monitor.Exit(lockCodecCtx); continue; }
                     }
                     else
                     {
@@ -328,6 +334,7 @@ public unsafe partial class AudioDecoder : DecoderBase
                             lock (lockSpeed)
                             {
                                 DrainFilters();
+                                Log.Debug($"[AudioDecoder] RecvFrame EOF (Filters). Status: {Status} -> Ended");
                                 Status = Status.Ended;
                             }
                         }

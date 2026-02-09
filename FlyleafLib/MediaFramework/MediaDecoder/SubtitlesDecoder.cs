@@ -1,4 +1,4 @@
-﻿using FlyleafLib.MediaFramework.MediaStream;
+﻿﻿﻿﻿using FlyleafLib.MediaFramework.MediaStream;
 using FlyleafLib.MediaFramework.MediaFrame;
 
 namespace FlyleafLib.MediaFramework.MediaDecoder;
@@ -75,7 +75,7 @@ public unsafe class SubtitlesDecoder : DecoderBase
         {
             if (Disposed) return;
 
-            if (Status == Status.Ended) Status = Status.Stopped;
+            if (Status == Status.Ended) Status = Status.Running;
             //else if (Status == Status.Draining) Status = Status.Stopping;
 
             DisposeFrames();
@@ -134,13 +134,20 @@ public unsafe class SubtitlesDecoder : DecoderBase
                             if (demuxer.IsRunning) break;
                         }
 
+                        if (demuxer.IsRunning) continue;
+
                         lock (demuxer.lockStatus)
                         lock (lockStatus)
                         {
+                            if (Status == Status.Stopped) break; // Respect external Stop
+
                             if (demuxer.Status == Status.Pausing || demuxer.Status == Status.Paused)
                                 Status = Status.Pausing;
                             else if (demuxer.Status != Status.Ended)
+                            {
+                                Log.Error($"[SubtitlesDecoder] Demuxer stopped/failed. Demuxer Status: {demuxer.Status}. Stopping decoder.");
                                 Status = Status.Stopping;
+                            }
                             else
                                 continue;
                         }
@@ -161,7 +168,12 @@ public unsafe class SubtitlesDecoder : DecoderBase
 
             lock (lockCodecCtx)
             {
-                if (Status == Status.Stopped || demuxer.SubtitlesPackets.Count == 0) continue;
+                if (Status != Status.Running)
+                    continue;
+
+                if (demuxer.SubtitlesPackets.Count == 0)
+                    continue;
+
                 packet = demuxer.SubtitlesPackets.Dequeue();
 
                 int gotFrame = 0;

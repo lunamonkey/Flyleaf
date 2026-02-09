@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+﻿﻿﻿﻿using System.Runtime.InteropServices;
 
 using FlyleafLib.MediaFramework.MediaFrame;
 using FlyleafLib.MediaFramework.MediaStream;
@@ -27,9 +27,9 @@ public unsafe class DataDecoder : DecoderBase
                     return;
 
                 if (Status == Status.Ended)
-                    Status = Status.Stopped;
+                    Status = Status.Running;
                 else if (Status == Status.Draining)
-                    Status = Status.Stopping;
+                    Status = Status.Running;
 
                 DisposeFrames();
             }
@@ -78,6 +78,8 @@ public unsafe class DataDecoder : DecoderBase
                     }
                     else if (!demuxer.IsRunning)
                     {
+                        if (CanDebug) Log.Debug($"Demuxer is not running [Demuxer Status: {demuxer.Status}]");
+
                         int retries = 5;
 
                         while (retries > 0)
@@ -87,6 +89,8 @@ public unsafe class DataDecoder : DecoderBase
                             if (demuxer.IsRunning)
                                 break;
                         }
+
+                        if (demuxer.IsRunning) continue;
 
                         lock (demuxer.lockStatus)
                             lock (lockStatus)
@@ -98,7 +102,10 @@ public unsafe class DataDecoder : DecoderBase
                                 else if (demuxer.Status == Status.Running)
                                     continue;
                                 else if (demuxer.Status != Status.Ended)
+                                {
+                                    Log.Error($"[DataDecoder] Demuxer stopped/failed. Demuxer Status: {demuxer.Status}. Stopping decoder.");
                                     Status = Status.Stopping;
+                                }
                                 else
                                     continue;
                             }
@@ -123,6 +130,7 @@ public unsafe class DataDecoder : DecoderBase
             {
                 if (Status == Status.Stopped || demuxer.DataPackets.Count == 0)
                     continue;
+
                 packet = demuxer.DataPackets.Dequeue();
 
                 if (packet->size > 0 && packet->data != null)
@@ -133,6 +141,7 @@ public unsafe class DataDecoder : DecoderBase
 
                 av_packet_free(&packet);
             }
+
         } while (Status == Status.Running);
 
         if (Status == Status.Draining) Status = Status.Ended;

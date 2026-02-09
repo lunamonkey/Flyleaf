@@ -1,4 +1,4 @@
-﻿using SharpGen.Runtime;
+﻿﻿﻿﻿using SharpGen.Runtime;
 
 using FlyleafLib.MediaFramework.MediaDemuxer;
 using FlyleafLib.MediaFramework.MediaFrame;
@@ -419,6 +419,8 @@ public unsafe class VideoDecoder : DecoderBase
                             if (demuxer.IsRunning) break;
                         }
 
+                        if (demuxer.IsRunning) continue;
+
                         lock (demuxer.lockStatus)
                         lock (lockStatus)
                         {
@@ -458,7 +460,7 @@ public unsafe class VideoDecoder : DecoderBase
                         if (FillEnqueueAVFrame() == -1234)
                         {
                             Status = Status.Stopping;
-                            break;
+                            continue;
                         }
 
                         continue;
@@ -468,7 +470,7 @@ public unsafe class VideoDecoder : DecoderBase
                         if (ret == -1234)
                             Status = Status.Stopping;
 
-                        break; // else EOF
+                        continue;
                     }
                 }
                 
@@ -504,10 +506,9 @@ public unsafe class VideoDecoder : DecoderBase
                     if (ret == -1234)
                         Status = Status.Stopping;
 
-                    break; // else EOF
+                    continue; // else EOF
                 }
             }
-
         } while (Status == Status.Running);
 
         if (isRecording)
@@ -823,13 +824,18 @@ public unsafe class VideoDecoder : DecoderBase
                             if (demuxer.IsRunning) break;
                         }
 
+                        if (demuxer.IsRunning) continue;
+
                         lock (demuxer.lockStatus)
                         lock (lockStatus)
                         {
                             if (demuxer.Status == Status.Pausing || demuxer.Status == Status.Paused)
                                 Status = Status.Pausing;
                             else if (demuxer.Status != Status.Ended)
+                            {
+                                Log.Error($"[VideoDecoder] Demuxer stopped/failed. Demuxer Status: {demuxer.Status}. Stopping decoder.");
                                 Status = Status.Stopping;
+                            }
                             else
                                 continue;
                         }
