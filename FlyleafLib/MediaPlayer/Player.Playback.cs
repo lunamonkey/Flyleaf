@@ -1,4 +1,4 @@
-﻿using FlyleafLib.MediaFramework.MediaDecoder;
+﻿﻿using FlyleafLib.MediaFramework.MediaDecoder;
 
 namespace FlyleafLib.MediaPlayer;
 
@@ -32,6 +32,7 @@ partial class Player
     /// </summary>
     public void Play()
     {
+        if (CanInfo) Log.Info("Play() called");
         lock (lockActions)
         {
             if (!canPlay || status == Status.Playing || status == Status.Ended)
@@ -161,6 +162,7 @@ partial class Player
     /// </summary>
     public void Pause()
     {
+        if (CanInfo) Log.Info("Pause() called");
         lock (lockActions)
         {
             if (!canPlay || status == Status.Ended)
@@ -344,6 +346,7 @@ partial class Player
     /// </summary>
     public void Stop()
     {
+        if (CanInfo) Log.Info("Stop() called");
         lock (lockActions)
         {
             Initialize();

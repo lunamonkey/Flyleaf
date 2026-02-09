@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+﻿﻿using System.Runtime.InteropServices;
 
 using FlyleafLib.MediaFramework.MediaStream;
 using FlyleafLib.MediaFramework.MediaFrame;
@@ -59,6 +59,7 @@ public unsafe partial class AudioDecoder
     {
         int ret = -1;
 
+        Log.Debug("Setting up filters");
         try
         {
             DisposeFilters();
@@ -154,6 +155,8 @@ public unsafe partial class AudioDecoder
     {
         if (filterGraph == null)
             return;
+
+        Log.Debug("Disposing filters");
 
         fixed(AVFilterGraph** filterGraphPtr = &filterGraph)
             avfilter_graph_free(filterGraphPtr);
@@ -340,6 +343,7 @@ public unsafe partial class AudioDecoder
         if (abufferDrained)
             return;
 
+        Log.Debug("Draining filters");
         abufferDrained = true;
 
         int ret;

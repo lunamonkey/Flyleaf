@@ -1,4 +1,4 @@
-﻿using FlyleafLib.MediaFramework.MediaDemuxer;
+﻿﻿using FlyleafLib.MediaFramework.MediaDemuxer;
 using FlyleafLib.MediaFramework.MediaStream;
 
 namespace FlyleafLib.MediaFramework.MediaDecoder;
@@ -46,6 +46,8 @@ public abstract unsafe class DecoderBase : RunThreadBase
         lock (lockActions)
         {
             var prevStream = Stream;
+
+            Log.Debug($"[DecoderBase] Cold Open requested. Current Status: {Status}");
             Dispose();
             frame = av_frame_alloc();   // TBR: Consider different full Dispose (including also the renderer?)* | 1) to avoid re-allocating -just unref- 2) we might forget it somewhere
             Status = Status.Opening;
@@ -103,6 +105,8 @@ public abstract unsafe class DecoderBase : RunThreadBase
     {
         if (Disposed)
             return;
+
+        Log.Debug($"[DecoderBase] Dispose called. Status: {Status}");
 
         lock (lockActions)
         {

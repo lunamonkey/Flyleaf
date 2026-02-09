@@ -183,6 +183,7 @@ unsafe partial class Player
             if (CanInfo) Log.Info($"Opening {url_iostream}");
 
             Initialize(Status.Opening, false); // TBR: (false) Avoid initializing the decoder twice (might cause issues)
+            decoder.Interrupt = false; // Ensure interrupt is cleared from OpenAsync
             var args2 = decoder.Open(url_iostream, defaultPlaylistItem, defaultVideo, defaultAudio, defaultSubtitles);
 
             args.Url        = args2.Url;
