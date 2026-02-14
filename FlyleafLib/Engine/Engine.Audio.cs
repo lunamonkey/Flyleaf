@@ -1,4 +1,5 @@
-﻿using System.ComponentModel;
+﻿using FlyleafLib.Interfaces;
+using System.ComponentModel;
 using System.Windows.Data;
 
 using SharpGen.Runtime;
@@ -164,12 +165,20 @@ public class AudioEngine : CallbackBase, IMMNotificationClient, INotifyPropertyC
                         Devices.Remove(device);
                 }
 
-                var defaultDevice =  deviceEnum.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
-                if (defaultDevice != null && CurrentDevice.Id != defaultDevice.Id)
+                try
                 {
-                    CurrentDevice.Id    = defaultDevice.Id;
-                    CurrentDevice.Name  = defaultDevice.FriendlyName;
-                    PropertyChanged?.Invoke(this, new(nameof(CurrentDevice)));
+                    var defaultDevice = deviceEnum.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                    if (defaultDevice != null && CurrentDevice.Id != defaultDevice.Id)
+                    {
+                        CurrentDevice.Id = defaultDevice.Id;
+                        CurrentDevice.Name = defaultDevice.FriendlyName;
+                        PropertyChanged?.Invoke(this, new(nameof(CurrentDevice)));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // This can happen if no audio devices are present or enabled (0x80070490 Element not found)
+                    Engine.Log.Warn($"Failed to get default audio endpoint: {ex.Message}");
                 }
 
                 // Fall back to DefaultDevice *Non-UI thread otherwise will freeze (not sure where and why) during xaudio.Dispose()
@@ -193,12 +202,4 @@ public class AudioEngine : CallbackBase, IMMNotificationClient, INotifyPropertyC
     public void OnDefaultDeviceChanged(DataFlow flow, Role role, string pwstrDefaultDeviceId) => RefreshDevices();
     public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) { }
 
-    public class AudioEndpoint
-    {
-        public string Id    { get; set; }
-        public string Name  { get; set; }
-
-        public override string ToString()
-            => Name;
-    }
 }

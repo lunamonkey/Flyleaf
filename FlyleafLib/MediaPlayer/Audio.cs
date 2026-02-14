@@ -1,16 +1,24 @@
-using Vortice.Multimedia;
-using Vortice.XAudio2;
-
-using static Vortice.XAudio2.XAudio2;
-
-using FlyleafLib.MediaFramework.MediaContext;
+using System;
+using System.Collections.Generic;
 using FlyleafLib.MediaFramework.MediaFrame;
+using FlyleafLib.MediaFramework.MediaContext;
 using FlyleafLib.MediaFramework.MediaStream;
+using FlyleafLib;
+using FlyleafLib.Interfaces;
 
 namespace FlyleafLib.MediaPlayer;
 
 public class Audio : NotifyPropertyChanged
 {
+    private static readonly Dictionary<AudioOutputMode, Func<LogHandler, IAudioOutput>> customOutputs = new();
+
+    public static void RegisterOutput(AudioOutputMode mode, Func<LogHandler, IAudioOutput> factory)
+    {
+        lock (customOutputs)
+        {
+            customOutputs[mode] = factory;
+        }
+    }
     // TODO: Add Volume/Mute to Config.Audio (consider allowing saving and separate config field (flags) whether to load those?)
 
     public event EventHandler<AudioFrame> SamplesAdded;
@@ -80,7 +88,7 @@ public class Audio : NotifyPropertyChanged
         get
         {
             lock (locker)
-                return sourceVoice == null || Mute ? _Volume : (int) ((decimal)sourceVoice.Volume * 100);
+                return Output == null || Mute ? _Volume : Output.Volume;
         }
         set
         {
@@ -96,8 +104,8 @@ public class Audio : NotifyPropertyChanged
             }
             else
             {
-                if (sourceVoice != null)
-                    sourceVoice.Volume = Math.Max(0, value / 100.0f);
+                if (Output != null)
+                    Output.Volume = value;
             }
 
             Set(ref _Volume, value, false);
@@ -115,21 +123,25 @@ public class Audio : NotifyPropertyChanged
         {
             lock (locker)
             {
-                if (sourceVoice == null)
-                    return;
-
-                sourceVoice.Volume = value ? 0 : _Volume / 100.0f;
+                if (Output != null)
+                    Output.Mute = value;
             }
 
             Set(ref mute, value, false);
         }
+    }
+
+    public float MasterVolume
+    {
+        get => Output?.MasterVolume ?? 1.0f;
+        set { if (Output != null) Output.MasterVolume = value; }
     }
     private bool mute = false;
 
     /// <summary>
     /// <para>Audio player's current device (available devices can be found on <see cref="Engine.Audio"/>)/></para>
     /// </summary>
-    public AudioEngine.AudioEndpoint Device
+    public AudioEndpoint Device
     {
         get => _Device;
         set
@@ -142,7 +154,7 @@ public class Audio : NotifyPropertyChanged
             RaiseUI(nameof(Device));
         }
     }
-    internal AudioEngine.AudioEndpoint _Device = Engine.Audio.DefaultDevice;
+    internal AudioEndpoint _Device = Engine.Audio.DefaultDevice;
     #endregion
 
     #region Declaration
@@ -156,13 +168,10 @@ public class Audio : NotifyPropertyChanged
     internal readonly object
                             locker = new();
 
-    IXAudio2                xaudio2;
-    internal IXAudio2MasteringVoice
-                            masteringVoice;
-    internal IXAudio2SourceVoice
-                            sourceVoice;
-    WaveFormat              waveFormat  = new(48000, 16, 6); // Output Audio Device
-    AudioBuffer             audioBuffer = new();
+    public IAudioOutput     Output { get; private set; }
+    public AudioOutputMode CurrentOutputMode => currentMode;
+    private AudioOutputMode currentMode;
+
     internal double         Timebase;
     internal ulong          submittedSamples;
     int                     curSampleRate = -1;
@@ -191,6 +200,7 @@ public class Audio : NotifyPropertyChanged
         Volume = Config.Audio.VolumeMax / 2;
     }
 
+
     internal void Initialize()
     {
         lock (locker)
@@ -204,42 +214,97 @@ public class Audio : NotifyPropertyChanged
             if (!isOpened || sampleRate <= 0)
                 return;
 
-            // FORCE synchronization right before creating the voice
+            // Check if we need to switch/create output provider
+            if (Output == null || currentMode != Config.Audio.OutputMode)
+            {
+                Dispose();
+                currentMode = Config.Audio.OutputMode;
+
+                lock (customOutputs)
+                {
+                    if (customOutputs.TryGetValue(currentMode, out var factory))
+                    {
+                        Output = factory(player.Log);
+                    }
+                    else
+                    {
+                        player.Log.Warn($"[Audio] Mode {currentMode} not registered. Falling back to default if available.");
+
+                        // Default to Shared if not found
+                        if (currentMode != AudioOutputMode.Shared && customOutputs.TryGetValue(AudioOutputMode.Shared, out var sharedFactory))
+                        {
+                            currentMode = AudioOutputMode.Shared;
+                            Output = sharedFactory(player.Log);
+                        }
+                        else
+                        {
+                            player.Log.Error($"[Audio] Failed to find a valid audio output for {currentMode}. Audio will be disabled.");
+                            Config.Audio.Enabled = false;
+                            return;
+                        }
+                    }
+                }
+            }
+
             int targetChannels = ChannelsOut;
             if (targetChannels <= 0) targetChannels = 2;
-            waveFormat = new WaveFormat(sampleRate, 16, targetChannels);
 
-            player.Log.Info($"Initializing audio at {sampleRate}Hz ({targetChannels} Channels) ({Device.Id}:{Device.Name})");
+            Timebase = 1000 * 10000.0 / sampleRate;
 
-            Dispose();
+            player.Log.Info($"Initializing audio at {sampleRate}Hz ({targetChannels} Channels) ({Device.Id}:{Device.Name}) [{currentMode}]");
 
             try
             {
-                xaudio2 = XAudio2Create();
-
-                try
-                {
-                    masteringVoice = xaudio2.CreateMasteringVoice(0, 0, AudioStreamCategory.GameEffects, _Device == Engine.Audio.DefaultDevice ? null : _Device.Id);
-                }
-                catch (Exception) // Win 7/8 compatibility issue https://social.msdn.microsoft.com/Forums/en-US/4989237b-814c-4a7a-8a35-00714d36b327/xaudio2-how-to-get-device-id-for-mastering-voice?forum=windowspro-audiodevelopment
-                {
-                    masteringVoice = xaudio2.CreateMasteringVoice(0, 0, AudioStreamCategory.GameEffects, _Device == Engine.Audio.DefaultDevice ? null : (@"\\?\swd#mmdevapi#" + _Device.Id.ToLower() + @"#{e6327cad-dcec-4949-ae8a-991e976a79d2}"));
-                }
-
-                sourceVoice = xaudio2.CreateSourceVoice(waveFormat, false);
-                sourceVoice.SetSourceSampleRate((uint)sampleRate);
-                sourceVoice.Start();
-
-                submittedSamples        = 0;
-                Timebase                = 1000 * 10000.0 / sampleRate;
-                masteringVoice.Volume   = Config.Audio.VolumeMax / 100.0f;
-                sourceVoice.Volume      = mute ? 0 : Math.Max(0, _Volume / 100.0f);
-                curSampleRate           = sampleRate;
+                Output.Volume = _Volume;
+                Output.Mute = mute;
+                Output.MasterVolume = Config.Audio.VolumeMax / 100.0f;
+                Output.Initialize(sampleRate, targetChannels, player.Config.Audio.BitDepth, Device);
+                
+                curSampleRate = sampleRate;
             }
             catch (Exception e)
             {
-                player.Log.Info($"Audio initialization failed ({e.Message})");
-                Config.Audio.Enabled = false;
+                player.Log.Error($"[Audio] {currentMode} initialization failed: {e.Message}");
+                
+                if (currentMode != AudioOutputMode.Shared)
+                {
+                    player.Log.Info("[Audio] Falling back to Shared mode...");
+                    currentMode = AudioOutputMode.Shared;
+                    Output?.Dispose();
+
+                    lock (customOutputs)
+                    {
+                        if (customOutputs.TryGetValue(AudioOutputMode.Shared, out var factory))
+                        {
+                            Output = factory(player.Log);
+                            try
+                            {
+                                Output.Volume = _Volume;
+                                Output.Mute = mute;
+                                Output.MasterVolume = Config.Audio.VolumeMax / 100.0f;
+                                // Use default device for fallback to ensure compatibility
+                                Output.Initialize(sampleRate, targetChannels, player.Config.Audio.BitDepth, Engine.Audio.DefaultDevice);
+                                curSampleRate = sampleRate;
+                                Timebase = 1000 * 10000.0 / sampleRate;
+                                if (player.AudioDecoder != null) player.AudioDecoder.SetupFiltersOrSwr();
+                            }
+                            catch (Exception ex)
+                            {
+                                player.Log.Error($"[Audio] Shared fallback also failed ({ex.Message})");
+                                Config.Audio.Enabled = false;
+                            }
+                        }
+                        else
+                        {
+                            player.Log.Error("[Audio] Shared mode not registered for fallback. Audio will be disabled.");
+                            Config.Audio.Enabled = false;
+                        }
+                    }
+                }
+                else
+                {
+                    Config.Audio.Enabled = false;
+                }
             }
         }
     }
@@ -247,15 +312,11 @@ public class Audio : NotifyPropertyChanged
     {
         lock (locker)
         {
-            if (xaudio2 == null)
+            if (Output == null)
                 return;
 
-            xaudio2.        Dispose();
-            sourceVoice?.   Dispose();
-            masteringVoice?.Dispose();
-            xaudio2         = null;
-            sourceVoice     = null;
-            masteringVoice  = null;
+            Output.Dispose();
+            Output = null;
         }
     }
 
@@ -273,13 +334,10 @@ public class Audio : NotifyPropertyChanged
 
                 framesDisplayed++;
 
-                // Replace the hardcoded / 4 with this:
-                submittedSamples += (ulong) (aFrame.dataLen / (2 * ChannelsOut));
                 SamplesAdded?.Invoke(this, aFrame);
 
-                audioBuffer.AudioDataPointer= aFrame.dataPtr;
-                audioBuffer.AudioBytes      = (uint)aFrame.dataLen;
-                sourceVoice.SubmitSourceBuffer(audioBuffer);
+                if (Output != null)
+                    Output.AddSamples(aFrame.dataPtr, aFrame.dataLen);
             }
             catch (Exception e) // Happens on audio device changed/removed
             {
@@ -290,39 +348,20 @@ public class Audio : NotifyPropertyChanged
             }
         }
     }
-    internal long GetBufferedDuration() { lock (locker) { return (long) ((submittedSamples - sourceVoice.State.SamplesPlayed) * Timebase); } }
+    internal long GetBufferedDuration() { lock (locker) { return Output?.GetBufferedDuration() ?? 0; } }
     internal long GetDeviceDelay()
     {
-        /* TODO
-         * Get rid of lockers during playback
-         * VBlack delay (8ms correction for now)
-         * TBR: (Very rare) Possible invalid response after quick Clear Buffers?* can return huge number ~60sec and can't even restore on next clear buffer
-         */
         lock (locker)
         {
-            var latency = (long) ((xaudio2.PerformanceData.CurrentLatencyInSamples * Timebase) - 8_0000);
-            if (latency > TimeSpan.FromMilliseconds(500).Ticks)
-            {
-                #if DEBUG
-                player.Log.Error($"!!! Device Latency nosense -> {TicksToTimeMini(latency)}");
-                #endif
-                return TimeSpan.FromMilliseconds(40).Ticks;
-            }
-            
-            return latency;
+            return Output?.GetDeviceDelay() ?? 0;
         }
     }
     internal void ClearBuffer()
     {
         lock (locker)
         {
-            if (submittedSamples == 0 || sourceVoice == null)
-                return;
-
-            sourceVoice.Stop();
-            sourceVoice.FlushSourceBuffers();
-            sourceVoice.Start();
-            submittedSamples = sourceVoice.State.SamplesPlayed;
+            if (Output != null)
+                Output.ClearBuffer();
         }
     }
 
@@ -360,6 +399,8 @@ public class Audio : NotifyPropertyChanged
         framesDisplayed = 0;
         framesDropped   = 0;
 
+        Timebase = 1000 * 10000.0 / sampleRate;
+
         if (fromCodec)
         {
             if (sampleRate <= 0)
@@ -368,7 +409,7 @@ public class Audio : NotifyPropertyChanged
                 return;
             }
 
-            if (sampleRate != curSampleRate || waveFormat.Channels != ChannelsOut)
+            if (sampleRate != curSampleRate || (Output != null && currentMode != Config.Audio.OutputMode))
                 Initialize();
         }
         

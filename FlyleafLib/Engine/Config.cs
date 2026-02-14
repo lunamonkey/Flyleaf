@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using FlyleafLib.Interfaces;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows.Data;
 
@@ -25,18 +26,22 @@ public class Config : NotifyPropertyChanged
     public Config()
     {
         // Parse default plugin options to Config.Plugins (Creates instances until fix with statics in interfaces)
-        foreach (var plugin in Engine.Plugins.Types.Values)
+        if (Engine.Plugins != null)
         {
-            var tmpPlugin = PluginHandler.CreatePluginInstance(plugin);
-            var defaultOptions = tmpPlugin.GetDefaultOptions();
-            tmpPlugin.Dispose();
+            foreach (var plugin in Engine.Plugins.Types.Values)
+            {
+                var tmpPlugin = PluginHandler.CreatePluginInstance(plugin);
+                var defaultOptions = tmpPlugin.GetDefaultOptions();
+                tmpPlugin.Dispose();
 
-            if (defaultOptions == null || defaultOptions.Count == 0) continue;
+                if (defaultOptions == null || defaultOptions.Count == 0) continue;
 
-            Plugins.Add(plugin.Name, []);
-            foreach (var opt in defaultOptions)
-                Plugins[plugin.Name].Add(opt.Key, opt.Value);
+                Plugins.Add(plugin.Name, []);
+                foreach (var opt in defaultOptions)
+                    Plugins[plugin.Name].Add(opt.Key, opt.Value);
+            }
         }
+        
         // save default plugin options for later
         defaultPlugins = Plugins;
 
@@ -777,6 +782,7 @@ public class Config : NotifyPropertyChanged
         internal readonly object lockFLFilters  = new();
         internal readonly object lockD3Filters  = new();
     }
+
     public class AudioConfig : NotifyPropertyChanged
     {
         public AudioConfig Clone()
@@ -796,6 +802,25 @@ public class Config : NotifyPropertyChanged
         bool _Enabled = true;
         internal void SetEnabled(bool enabled)      => Set(ref _Enabled, enabled, true, nameof(Enabled));
         public void Toggle() => Enabled = !Enabled;
+
+        /// <summary>
+        /// Audio output mode (Shared/Shared mode, Exclusive/WASAPI Exclusive, ASIO/Direct ASIO)
+        /// </summary>
+        public AudioOutputMode OutputMode { get => _OutputMode; set => Set(ref _OutputMode, value); }
+        AudioOutputMode _OutputMode = AudioOutputMode.Shared;
+ 
+        /// <summary>
+        /// Selected ASIO driver name
+        /// </summary>
+        public string AsioDriver { get => _AsioDriver; set => Set(ref _AsioDriver, value); }
+        string _AsioDriver;
+
+        /// <summary>
+        /// Audio output bit depth (S16, S32, F32)
+        /// </summary>
+        public AudioBitDepth BitDepth { get => _BitDepth; set => Set(ref _BitDepth, value); }
+        AudioBitDepth _BitDepth = AudioBitDepth.S16;
+
 
         /// <summary>
         /// Force specific output channels (e.g. 6 for 5.1). Set to 0 to use input's channel count.
@@ -824,7 +849,7 @@ public class Config : NotifyPropertyChanged
         /// <summary>
         /// The upper limit of the volume amplifier
         /// </summary>
-        public int              VolumeMax           { get => _VolumeMax; set { Set(ref _VolumeMax, value); if (player != null && player.Audio.masteringVoice != null) player.Audio.masteringVoice.Volume = value / 100f;  } }
+        public int              VolumeMax           { get => _VolumeMax; set { if (Set(ref _VolumeMax, value)) { if (player != null) player.Audio.MasterVolume = value / 100f; } } }
         int _VolumeMax = 150;
 
         public void ToggleMute()    => player.Audio.Mute = !player.Audio.Mute;
@@ -838,7 +863,7 @@ public class Config : NotifyPropertyChanged
             if (player.Audio.Volume == 0) return;
             player.Audio.Volume = Math.Max(player.Audio.Volume - VolumeOffset, 0);
         }
-
+ 
         /// <summary>
         /// Uses FFmpeg filters instead of Swr (better speed quality and support for extra filters, requires avfilter-X.dll)
         /// </summary>
@@ -868,6 +893,7 @@ public class Config : NotifyPropertyChanged
         /// <param name="value">Filter's property value</param>
         /// <returns>0 on success</returns>
         public int UpdateFilter(string filterId, string key, string value) => player.AudioDecoder.UpdateFilter(filterId, key, value);
+
 
         /// <summary>
         /// Audio languages preference by priority

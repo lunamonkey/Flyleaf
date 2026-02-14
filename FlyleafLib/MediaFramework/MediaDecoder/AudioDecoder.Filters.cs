@@ -1,7 +1,9 @@
-﻿﻿using System.Runtime.InteropServices;
+﻿﻿using FlyleafLib.Interfaces;
+using System.Runtime.InteropServices;
 
 using FlyleafLib.MediaFramework.MediaStream;
 using FlyleafLib.MediaFramework.MediaFrame;
+using FlyleafLib;
 
 namespace FlyleafLib.MediaFramework.MediaDecoder;
 
@@ -57,6 +59,7 @@ public unsafe partial class AudioDecoder
     }
     private int SetupFilters()
     {
+        if (codecCtx == null) return -1;
         int ret = -1;
 
         Log.Debug("Setting up filters");
@@ -226,6 +229,7 @@ public unsafe partial class AudioDecoder
     }
     internal int SetupFiltersOrSwr()
     {
+        if (codecCtx == null) return -1;
         lock (lockSpeed)
         {
             int ret = -1;
@@ -233,7 +237,7 @@ public unsafe partial class AudioDecoder
             if (Disposed)
                 return ret;
 
-            if (Config.Audio.FiltersEnabled)
+            if (Config.Audio.FiltersEnabled && Config.Audio.OutputMode == AudioOutputMode.Shared)
             {
                 ret = SetupFilters();
 

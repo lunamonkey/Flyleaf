@@ -1,6 +1,8 @@
-﻿﻿﻿﻿using FlyleafLib.MediaFramework.MediaStream;
+﻿﻿using FlyleafLib.Interfaces;
+using FlyleafLib.MediaFramework.MediaStream;
 using FlyleafLib.MediaFramework.MediaFrame;
 using FlyleafLib.MediaFramework.MediaRemuxer;
+using FlyleafLib;
 
 namespace FlyleafLib.MediaFramework.MediaDecoder;
 
@@ -81,11 +83,16 @@ public unsafe partial class AudioDecoder : DecoderBase
         codecCtx->pkt_timebase  = Stream.AVStream->time_base;
         codecCtx->codec_id      = codec->id; // avcodec_parameters_to_context will change this we need to set Stream's Codec Id (eg we change mp2 to mp3)
 
-        // Dynamic Output Configuration: Match the input stream's layout
-        AOutSampleFormat = AVSampleFormat.S16;
+        // Dynamic Output Configuration: Match the input stream's layout and requested bit depth
+        switch (Config.Audio.BitDepth)
+        {
+            case AudioBitDepth.S32: AOutSampleFormat = AVSampleFormat.S32; break;
+            case AudioBitDepth.F32: AOutSampleFormat = AVSampleFormat.Flt; break;
+            default:                AOutSampleFormat = AVSampleFormat.S16; break;
+        }
         AOutSampleFormatStr = av_get_sample_fmt_name(AOutSampleFormat);
 
-        if (Config.Audio.Channels == 6)
+        if (Config.Audio.OutputMode == AudioOutputMode.Shared && Config.Audio.Channels == 6)
             AOutChannelLayout = AV_CHANNEL_LAYOUT_5POINT1;
         else
             AOutChannelLayout = codecCtx->ch_layout;
@@ -357,7 +364,10 @@ public unsafe partial class AudioDecoder : DecoderBase
 
                     // We could fix it down to the demuxer based on size?
                     if (frame->duration <= 0)
+                    {
+                        if (sampleRateTimebase == 0) sampleRateTimebase = 1000 * 1000.0 / codecCtx->sample_rate;
                         frame->duration = av_rescale_q((long)(frame->nb_samples * sampleRateTimebase), Engine.FFmpeg.AV_TIMEBASE_Q, Stream.AVStream->time_base);
+                    }
 
                     codecChanged = AudioStream.SampleFormat != codecCtx->sample_fmt || AudioStream.SampleRate != codecCtx->sample_rate || AudioStream.ChannelLayout != codecCtx->ch_layout.u.mask;
 
